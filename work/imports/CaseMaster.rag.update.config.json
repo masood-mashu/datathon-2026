@@ -1,0 +1,5 @@
+{
+  "table_identifier": "CaseMaster",
+  "operation": "update",
+  "find_by": "CaseMasterID"
+}

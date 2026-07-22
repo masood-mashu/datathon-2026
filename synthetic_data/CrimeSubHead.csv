@@ -1,0 +1,17 @@
+CrimeSubHeadID,CrimeHeadID,CrimeHeadName,SeqID
+1,1,Murder,1
+2,1,Attempt to Murder,2
+3,1,Grievous Hurt,3
+4,2,Theft,1
+5,2,Robbery,2
+6,2,Burglary,3
+7,2,Vehicle Theft,4
+8,3,Domestic Violence,1
+9,3,Dowry Harassment,2
+10,3,Sexual Assault,3
+11,4,Gambling,1
+12,4,Public Nuisance,2
+13,5,Cheating,1
+14,5,Criminal Breach of Trust,2
+15,6,Online Fraud,1
+16,6,Identity Theft,2

@@ -1,0 +1,13 @@
+{
+  "functions": {
+    "targets": [
+      "query_assistant"
+    ],
+    "ignore": [],
+    "source": "functions"
+  },
+  "client": {
+    "source": "crime-assistant-client",
+    "plugin": "zcatalyst-cli-plugin-react"
+  }
+}
