@@ -56,6 +56,8 @@ synthetic_data/                   Generated synthetic CSV dataset
 work/imports/                     Trimmed/import-ready Catalyst CSVs
 ```
 
+For future contributors or AI agents, read [docs/PROJECT_CONTEXT.md](docs/PROJECT_CONTEXT.md) first. It records the current purpose, implemented flows, live verification results, known limits, and upgrade roadmap.
+
 ## Tech Stack
 
 - Zoho Catalyst
