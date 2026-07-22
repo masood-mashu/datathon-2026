@@ -49,7 +49,7 @@ React client
 crime-assistant-client/           React investigation console
 functions/query_assistant/        Catalyst Advanced I/O backend
 functions/query_assistant/lib/    Router, SQL templates, graph seed, RAG engine
-docs/                             Deployment and Data Store setup notes
+docs/PROJECT_CONTEXT.md           Full handoff context and roadmap
 schema.sql                        FIR-style relational schema
 generate_data.py                  Synthetic data generator
 synthetic_data/                   Generated synthetic CSV dataset
@@ -123,7 +123,7 @@ The same-day prototype uses a minimal Catalyst Data Store setup:
 
 The RAG path reads `CaseMaster.BriefFacts` when available. A packaged fallback corpus remains in the function so the demo is resilient if a fresh Catalyst environment has not yet imported narrative fields.
 
-Import guidance is documented in [docs/DATASTORE_SETUP.md](docs/DATASTORE_SETUP.md).
+Import guidance and current setup notes are documented in [docs/PROJECT_CONTEXT.md](docs/PROJECT_CONTEXT.md).
 
 ## Current Status
 
