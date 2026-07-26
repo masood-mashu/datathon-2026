@@ -496,9 +496,7 @@ async function executeGeospatialHotspots(zcql, parameters) {
 
 async function executeCaseTimeline(zcql) {
   const [caseRows, arrestRows, chargeSheetRows] = await Promise.all([
-    zcql.executeZCQLQuery(
-      buildSingleTableQuery("CaseMaster", ["CaseMasterID", "CrimeNo", "CaseNo", "CrimeRegisteredDate", "IncidentFromDate", "IncidentToDate"])
-    ),
+    executeTimelineCaseRows(zcql),
     zcql.executeZCQLQuery(
       buildSingleTableQuery("ArrestSurrender", ["CaseMasterID", "ArrestSurrenderID", "ArrestSurrenderTypeID", "ArrestSurrenderDate", "AccusedMasterID"])
     ),
@@ -534,6 +532,20 @@ async function executeCaseTimeline(zcql) {
     });
   }
   return events.filter((row) => row.Date).sort((left, right) => String(right.Date).localeCompare(String(left.Date)));
+}
+
+async function executeTimelineCaseRows(zcql) {
+  try {
+    return await zcql.executeZCQLQuery(
+      buildSingleTableQuery("CaseMaster", ["CaseMasterID", "CrimeNo", "CaseNo", "CrimeRegisteredDate", "IncidentFromDate", "IncidentToDate"])
+    );
+  } catch (_error) {
+    try {
+      return await zcql.executeZCQLQuery(buildSingleTableQuery("CaseMaster", ["CaseMasterID"]));
+    } catch (_fallbackError) {
+      return [];
+    }
+  }
 }
 
 async function executeSimilarCases(zcql) {

@@ -9,7 +9,8 @@ Live demo: [Project-Rainfall on Zoho Catalyst](https://project-rainfall-60079554
 This prototype turns natural-language investigation questions into auditable query workflows:
 
 - SQL mode for structured questions such as district counts and case status breakdowns.
-- Graph mode for repeat-offender and co-accused network previews.
+- Graph mode for repeat-offender and co-accused networks calculated from live Catalyst Data Store rows.
+- Decision-support mode for evidence-linked investigation timelines.
 - RAG mode for retrieving and summarizing `BriefFacts` narratives from `CaseMaster`.
 - Audit-first responses showing route, intent, confidence, generated query, execution status, and preview rows.
 
@@ -21,6 +22,7 @@ Use these prompts in the live app:
 How many cases are there by district in Bengaluru Urban for 2026?
 Show status breakdown for 2026
 Show network connections for repeat offenders
+Show investigation timeline for cases
 Summarize the brief facts for recent online fraud cases
 ```
 
@@ -28,7 +30,8 @@ Expected live behavior:
 
 - District query returns `Bengaluru Urban` with `27` cases.
 - Status query returns `Under Investigation`, `Charge Sheeted`, `Closed`, and `Undetected` counts.
-- Graph query returns six network edges for repeat-offender preview.
+- Graph query returns seven live co-accused network edges from Catalyst Data Store.
+- Timeline query returns investigation events after the pending function patch is deployed.
 - RAG query returns five ranked `BriefFacts` rows and a concise narrative summary.
 
 ## Architecture
@@ -38,7 +41,8 @@ React client
   -> Catalyst Advanced I/O function: query_assistant
     -> Query router
       -> SQL aggregation over Catalyst Data Store
-      -> Graph preview response
+      -> Graph relationship analysis over Accused co-occurrence rows
+      -> Investigation timeline builder
       -> BriefFacts retrieval and summarization
     -> Audit metadata builder
 ```
@@ -78,7 +82,22 @@ cd ..\functions\query_assistant
 npm install
 ```
 
-Serve the Catalyst client and function locally:
+Run the React UI locally against the deployed Catalyst backend:
+
+```powershell
+cd D:\hackathon\datathon\crime-assistant-client
+$env:PORT = "3002"
+$env:REACT_APP_QUERY_ENDPOINT = "https://project-rainfall-60079554686.development.catalystserverless.in/server/query_assistant/"
+npm start
+```
+
+Local UI:
+
+```text
+http://localhost:3002
+```
+
+Serve the Catalyst client and function locally, when Catalyst CLI permissions are available:
 
 ```powershell
 cd D:\hackathon\datathon
@@ -120,21 +139,29 @@ The same-day prototype uses a minimal Catalyst Data Store setup:
 - `Unit`
 - `CaseStatusMaster`
 - `CaseMaster`
+- `Accused`
+- `ArrestSurrender`
+- `ChargesheetDetails`
 
 The RAG path reads `CaseMaster.BriefFacts` when available. A packaged fallback corpus remains in the function so the demo is resilient if a fresh Catalyst environment has not yet imported narrative fields.
 
-Import guidance and current setup notes are documented in [docs/PROJECT_CONTEXT.md](docs/PROJECT_CONTEXT.md).
+Live graph verification now uses `Accused(AccusedMasterID, CaseMasterID)` rows seeded in Catalyst. Timeline tables and seed rows also exist; the local backend patch in `functions/query_assistant/index.js` must be deployed before the live timeline endpoint passes against the minimal `CaseMaster` schema.
+
+Import guidance and current setup notes are documented in [docs/SUBMISSION_RUNBOOK.md](docs/SUBMISSION_RUNBOOK.md).
 
 ## Current Status
 
-Submission smoke test completed on July 22, 2026:
+Latest smoke tests on July 26, 2026:
 
 - Live endpoint mode verified.
 - Demo fallback verified off.
 - SQL district query verified.
 - SQL status query verified.
-- Graph preview verified.
+- Live graph query verified: `execution.executed = true`, `row_count = 7`.
+- Timeline Data Store tables and seed rows created.
+- Timeline code patch is syntax-checked locally and pending Catalyst function deployment.
 - RAG `BriefFacts` retrieval verified.
+- Local React UI verified at `http://localhost:3002` with the deployed Catalyst backend.
 
 ## Challenge Coverage Audit (July 26, 2026)
 
@@ -143,17 +170,17 @@ Submission smoke test completed on July 22, 2026:
 | Conversational FIR, status, network, and narrative queries | SQL, graph, and RAG routes | Partial |
 | English, Kannada, conversation context, and voice | English plus core Kannada intent normalization, follow-ups, and browser speech input | Partial |
 | Local PDF conversation history | SmartBrowz PDF endpoint implemented; browser print-to-PDF fallback works until Catalyst Authentication is configured | Partial |
-| Criminal network analysis | Co-accused preview and interactive relationship visualization | Partial |
+| Criminal network analysis | Live co-accused graph from Catalyst `Accused` table plus interactive relationship visualization | Partial |
 | Trends, hotspots, and clusters | District/status aggregation; no spatial hotspot or cluster model | Partial |
 | Sociological and behavioral insights | Schema has demographic fields; governed aggregate analysis is not built | Not implemented |
 | Offender profiling and risk scoring | Repeat-offender preview only | Not implemented |
-| Investigator decision support | Narrative summaries and evidence/audit metadata | Partial |
+| Investigator decision support | Narrative summaries, timeline route, and evidence/audit metadata; live timeline awaiting function redeploy | Partial |
 | Financial link analysis | No transaction data model or workflow | Not implemented |
 | Forecasting and early warning | No forecasting model or alert service | Not implemented |
 | Explainability and evidence trail | Route explanation, query plan, citations, and audit payload | Partial |
 | Enforced RBAC, persistent audit, and governance | Role is captured in requests, but no identity enforcement or durable audit store | Not implemented |
 
-The upgrade path should next prioritize full data import, authenticated role enforcement, persistent audit records, hotspot/trend templates, and carefully governed aggregate analytics before adding predictive features.
+The upgrade path should next prioritize deploying the pending timeline patch, full data import, authenticated role enforcement, persistent audit records, hotspot/trend templates, and carefully governed aggregate analytics before adding predictive features.
 
 ### Catalyst Service Alignment
 

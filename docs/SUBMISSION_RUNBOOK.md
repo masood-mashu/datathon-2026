@@ -18,6 +18,10 @@
 - Manual seed rows added on 2026-07-26: `(1,1)`, `(2,1)`, `(3,2)`, `(4,2)`, `(5,2)`, `(6,2)`.
 - Deployed function smoke test passed for `Show network connections for repeat offenders`.
 - Result: `execution.executed = true`, `row_count = 7`, including co-accused edges `A1-A2` for case `1` and six pairwise edges for accused `A3-A6` in case `2`.
+- `ArrestSurrender` table exists with `CaseMasterID`, `ArrestSurrenderID`, `ArrestSurrenderTypeID`, `ArrestSurrenderDate`, and `AccusedMasterID`.
+- `ChargesheetDetails` table exists with `CaseMasterID`, `CSID`, `csdate`, and `cstype`.
+- Timeline seed rows added on 2026-07-26: `ArrestSurrender(2,9002,2,2026-07-18,3)` and `ChargesheetDetails(2,7002,2026-07-22,1)`.
+- Timeline endpoint status: local backend patch is ready to tolerate the minimal `CaseMaster` schema, but it still needs `catalyst deploy --only functions` before the live endpoint passes.
 
 ## Immediate Catalyst console action (15 minutes)
 
@@ -37,7 +41,7 @@ Use Catalyst Data Store bulk imports, in this order, after creating the correspo
 3. `Employee`, `Court`, `Act`, `Section`
 4. `CaseMaster`, `Accused`, `Victim`, `ComplainantDetails`, `ArrestSurrender`, `ChargesheetDetails`, `ActSectionAssociation`
 
-The fastest live-evidence milestone is complete: `Accused` exists with `AccusedMasterID` and `CaseMasterID`, so the criminal-network result now calculates co-accused relationships from Catalyst Data Store. Next add `ArrestSurrender` and `ChargesheetDetails` to enable the investigation-timeline query.
+The fastest live-evidence milestone is complete: `Accused` exists with `AccusedMasterID` and `CaseMasterID`, so the criminal-network result now calculates co-accused relationships from Catalyst Data Store. Timeline tables and seed rows are also created; deploy the pending function patch, then rerun the timeline smoke test.
 
 The Catalyst CLI pattern is:
 
@@ -45,6 +49,12 @@ The Catalyst CLI pattern is:
 catalyst ds:import .\synthetic_data\Accused.csv --table Accused
 catalyst ds:import .\synthetic_data\ArrestSurrender.csv --table ArrestSurrender
 catalyst ds:import .\synthetic_data\ChargesheetDetails.csv --table ChargesheetDetails
+```
+
+Pending deploy command:
+
+```powershell
+catalyst deploy --only functions
 ```
 
 Do not import demographic fields into predictive features. Use caste, religion, and related data only for governed aggregate reporting, if required.
