@@ -4,6 +4,35 @@ function buildZcqlPlan(queryText) {
   const district = extractDistrict(normalized);
   const dateRange = extractDateRange(normalized);
 
+  const caseNumber = extractCaseNumber(queryText);
+  if (caseNumber && (normalized.includes("fir") || normalized.includes("case") || normalized.includes("details") || normalized.includes("show"))) {
+    return {
+      mode: "sql",
+      intent: "fir_case_lookup",
+      confidence: 0.9,
+      templateId: "fir_case_lookup",
+      templateTitle: "FIR case lookup",
+      explanation: "Retrieves a case record and its police-station context by FIR crime number or case number.",
+      sourceReference: "CaseMaster, Unit, District",
+      parameters: { caseNumber },
+      zcql: `SELECT CaseMaster.CrimeNo, CaseMaster.CaseNo, CaseMaster.CrimeRegisteredDate, CaseMaster.BriefFacts FROM CaseMaster WHERE CaseMaster.CrimeNo = '${escapeLiteral(caseNumber)}' OR CaseMaster.CaseNo = '${escapeLiteral(caseNumber)}' LIMIT 10`,
+    };
+  }
+
+  if (normalized.includes("hotspot") || normalized.includes("hot spot") || normalized.includes("cluster")) {
+    return {
+      mode: "sql",
+      intent: "geospatial_hotspot_analysis",
+      confidence: 0.84,
+      templateId: "geospatial_hotspot_analysis",
+      templateTitle: "Geospatial hotspot analysis",
+      explanation: "Aggregates cases into approximate coordinate cells to surface recurring incident locations.",
+      sourceReference: "CaseMaster.latitude, CaseMaster.longitude",
+      parameters: { dateRange, district },
+      zcql: "AGGREGATE CaseMaster latitude/longitude into 0.02-degree hotspot cells",
+    };
+  }
+
   if (normalized.includes("district")) {
     return {
       mode: "sql",
@@ -151,6 +180,11 @@ function extractDateRange(normalized) {
 
 function toTitleCase(value) {
   return value.replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function extractCaseNumber(queryText) {
+  const match = String(queryText).match(/\b\d{9,18}\b/);
+  return match ? match[0] : null;
 }
 
 module.exports = {

@@ -3,6 +3,10 @@ export const starterPrompts = [
   "Show status breakdown for 2026",
   "Show network connections for repeat offenders",
   "Summarize the brief facts for recent online fraud cases",
+  "Show FIR details for 100150597202600001",
+  "Show crime hotspots for 2026",
+  "Show investigation timeline",
+  "Find similar past cases",
 ];
 
 export function buildFallbackResult(query) {

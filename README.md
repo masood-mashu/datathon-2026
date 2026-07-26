@@ -136,6 +136,29 @@ Submission smoke test completed on July 22, 2026:
 - Graph preview verified.
 - RAG `BriefFacts` retrieval verified.
 
+## Challenge Coverage Audit (July 26, 2026)
+
+| Required capability | Current coverage | Status |
+| --- | --- | --- |
+| Conversational FIR, status, network, and narrative queries | SQL, graph, and RAG routes | Partial |
+| English, Kannada, conversation context, and voice | English plus core Kannada intent normalization, follow-ups, and browser speech input | Partial |
+| Local PDF conversation history | SmartBrowz PDF endpoint implemented; browser print-to-PDF fallback works until Catalyst Authentication is configured | Partial |
+| Criminal network analysis | Co-accused preview and interactive relationship visualization | Partial |
+| Trends, hotspots, and clusters | District/status aggregation; no spatial hotspot or cluster model | Partial |
+| Sociological and behavioral insights | Schema has demographic fields; governed aggregate analysis is not built | Not implemented |
+| Offender profiling and risk scoring | Repeat-offender preview only | Not implemented |
+| Investigator decision support | Narrative summaries and evidence/audit metadata | Partial |
+| Financial link analysis | No transaction data model or workflow | Not implemented |
+| Forecasting and early warning | No forecasting model or alert service | Not implemented |
+| Explainability and evidence trail | Route explanation, query plan, citations, and audit payload | Partial |
+| Enforced RBAC, persistent audit, and governance | Role is captured in requests, but no identity enforcement or durable audit store | Not implemented |
+
+The upgrade path should next prioritize full data import, authenticated role enforcement, persistent audit records, hotspot/trend templates, and carefully governed aggregate analytics before adding predictive features.
+
+### Catalyst Service Alignment
+
+The deployed prototype uses Catalyst Web Client Hosting, Serverless Functions, and Data Store. Conversation reports first use SmartBrowz PDF generation through the Node SDK and fall back to the browser print dialog in unauthenticated Development environments. The next deployment milestone is to enable Catalyst Authentication and assign application roles; this is required for the SmartBrowz request identity and the UI role selector must not be treated as access control until that is done.
+
 ## Disclaimer
 
 This project uses synthetic data generated for the datathon prototype. It does not contain real FIR records or real personal data.

@@ -3,6 +3,34 @@ const { buildZcqlPlan } = require("./sqlTemplates");
 function routeQuery(queryText) {
   const normalized = queryText.toLowerCase().trim();
 
+  if (normalized.includes("timeline") || normalized.includes("case history") || normalized.includes("investigation history")) {
+    return {
+      mode: "decision_support",
+      intent: "case_timeline",
+      confidence: 0.83,
+      templateId: "case_timeline",
+      templateTitle: "Investigation timeline",
+      explanation: "Builds an evidence-linked case chronology from FIR registration, arrest/surrender, and charge-sheet records.",
+      sourceReference: "CaseMaster, ArrestSurrender, ChargesheetDetails",
+      parameters: {},
+      zcql: "BUILD TIMELINE FROM CaseMaster, ArrestSurrender, ChargesheetDetails",
+    };
+  }
+
+  if (normalized.includes("similar case") || normalized.includes("similar past") || normalized.includes("precedent")) {
+    return {
+      mode: "decision_support",
+      intent: "similar_case_retrieval",
+      confidence: 0.78,
+      templateId: "similar_cases",
+      templateTitle: "Similar past cases",
+      explanation: "Ranks prior cases by shared crime classification and police-station context to support investigator review.",
+      sourceReference: "CaseMaster, CrimeMajorHeadMaster, CrimeMinorHeadMaster",
+      parameters: {},
+      zcql: "RETRIEVE SIMILAR CASES FROM CaseMaster classification and location fields",
+    };
+  }
+
   if (
     normalized.includes("network") ||
     normalized.includes("connections") ||
@@ -16,7 +44,7 @@ function routeQuery(queryText) {
       templateId: "criminal_network_preview",
       templateTitle: "Criminal network preview",
       explanation: "Builds a repeat-offender network preview for graph rendering.",
-      sourceReference: "Packaged graph seed for deployment-safe demo",
+      sourceReference: "Accused co-occurrence data from Catalyst Data Store; packaged fallback only when the Accused table is unavailable",
       parameters: {},
       zcql: [
         "SELECT CriminalNetworkEdge.AccusedMasterID_A AS AccusedMasterID_A,",

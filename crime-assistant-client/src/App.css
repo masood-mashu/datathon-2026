@@ -131,7 +131,8 @@
 }
 
 textarea,
-input {
+input,
+select {
   width: 100%;
   border: 1px solid rgba(156, 187, 255, 0.25);
   border-radius: 18px;
@@ -180,6 +181,47 @@ textarea {
   flex-wrap: wrap;
   gap: 10px;
 }
+
+.action-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.voice-button,
+.export-button {
+  border: 1px solid rgba(156, 187, 255, 0.3);
+  border-radius: 14px;
+  padding: 12px 15px;
+  background: rgba(25, 56, 92, 0.9);
+  color: #e6f0ff;
+  cursor: pointer;
+  font: inherit;
+}
+
+.export-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.context-note,
+.network-caption {
+  margin: 0;
+  color: #b8c8e8;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.network-card svg {
+  display: block;
+  width: min(100%, 340px);
+  margin: 8px auto;
+  overflow: visible;
+}
+
+.network-edge { stroke: #7dafff; stroke-width: 2; opacity: 0.7; }
+.network-node { fill: #f2bc54; stroke: #fff2cf; stroke-width: 2; }
+.network-card text { fill: #07111f; font-size: 10px; font-weight: 800; }
 
 .prompt-chip,
 .submit-button {
@@ -339,4 +381,6 @@ th {
     width: 100%;
     justify-content: center;
   }
+
+  .action-row { align-items: stretch; flex-direction: column; }
 }

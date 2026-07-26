@@ -31,9 +31,39 @@ module.exports = async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && pathname === "/report") {
+    const body = await parseBody(req);
+    try {
+      const catalystApp = catalyst.initialize(req);
+      const pdfStream = await catalystApp.smartbrowz().convertToPdf(
+        buildConversationReportHtml(body),
+        {
+          pdf_options: {
+            format: "A4",
+            margin: { top: "18mm", right: "14mm", bottom: "18mm", left: "14mm" },
+            display_header_footer: true,
+            footer_template: '<div style="font-size:9px;width:100%;text-align:center;color:#637087">KSP Crime Intelligence - Page <span class="pageNumber"></span> of <span class="totalPages"></span></div>',
+          },
+        }
+      );
+      res.writeHead(200, {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": 'attachment; filename="ksp-conversation-report.pdf"',
+      });
+      pdfStream.pipe(res);
+    } catch (error) {
+      sendJson(res, 500, { error: "Could not generate the Catalyst SmartBrowz PDF report.", detail: error.message });
+    }
+    return;
+  }
+
   if (req.method === "POST" && pathname === "/") {
     const body = await parseBody(req);
-    const queryText = (body.query || "").trim();
+    const rawQueryText = (body.query || "").trim();
+    const queryText = contextualizeQuery(
+      rawQueryText,
+      Array.isArray(body.conversation_context) ? body.conversation_context : []
+    );
     const userRole = body.role || "investigator";
     const sessionId = body.session_id || "local-session";
 
@@ -46,7 +76,7 @@ module.exports = async (req, res) => {
     const audit = buildAuditRecord({
       sessionId,
       userRole,
-      queryText,
+      queryText: rawQueryText,
       route,
     });
 
@@ -56,7 +86,8 @@ module.exports = async (req, res) => {
       message: "Query routed successfully",
       timestamp: new Date().toISOString(),
       request: {
-        query: queryText,
+        query: rawQueryText,
+        resolved_query: queryText,
         role: userRole,
         session_id: sessionId,
       },
@@ -82,7 +113,7 @@ module.exports = async (req, res) => {
 };
 
 async function executeQuery(req, route) {
-  if (!route.zcql || (route.mode !== "sql" && route.mode !== "graph")) {
+  if (!route.zcql || (route.mode !== "sql" && route.mode !== "graph" && route.mode !== "decision_support")) {
     if (route.mode === "rag" && route.templateId === "brief_facts_retrieval") {
       try {
         const catalystApp = catalyst.initialize(req);
@@ -144,13 +175,61 @@ async function executeQuery(req, route) {
       };
     }
 
-    if (route.templateId === "criminal_network_preview") {
-      const rows = executeGraphPreview(route.parameters || {});
+    if (route.templateId === "fir_case_lookup") {
+      const rows = await executeFirCaseLookup(zcql, route.parameters || {});
+      return {
+        executed: true,
+        rowCount: rows.length,
+        rows: rows.slice(0, 10),
+        summary: rows.length ? "FIR records matching the supplied crime or case number." : "No matching FIR record was found.",
+        citations: [],
+        setupHint: null,
+      };
+    }
+
+    if (route.templateId === "geospatial_hotspot_analysis") {
+      const rows = await executeGeospatialHotspots(zcql, route.parameters || {});
       return {
         executed: true,
         rowCount: rows.length,
         rows: rows.slice(0, 25),
-        summary: null,
+        summary: "Hotspots are approximate coordinate cells, ranked by registered-case volume. They are decision-support indicators, not crime predictions.",
+        citations: [],
+        setupHint: null,
+      };
+    }
+
+    if (route.templateId === "criminal_network_preview") {
+      const graphResult = await executeCriminalNetwork(zcql);
+      return {
+        executed: true,
+        rowCount: graphResult.rows.length,
+        rows: graphResult.rows.slice(0, 25),
+        summary: graphResult.summary,
+        citations: [],
+        setupHint: null,
+      };
+    }
+
+    if (route.templateId === "case_timeline") {
+      const rows = await executeCaseTimeline(zcql);
+      return {
+        executed: true,
+        rowCount: rows.length,
+        rows: rows.slice(0, 50),
+        summary: "Timeline events are drawn from registered case, arrest/surrender, and charge-sheet records. Missing events indicate unavailable source records, not an investigative conclusion.",
+        citations: [],
+        setupHint: null,
+      };
+    }
+
+    if (route.templateId === "similar_cases") {
+      const rows = await executeSimilarCases(zcql);
+      return {
+        executed: true,
+        rowCount: rows.length,
+        rows: rows.slice(0, 25),
+        summary: "Cases are grouped by recorded major/minor crime classification and police-station context. Similarity is a review aid, not a finding of linkage.",
         citations: [],
         setupHint: null,
       };
@@ -250,7 +329,11 @@ function buildSetupHint(message, route) {
       problem: "Catalyst Data Store tables have not been created yet for this query path.",
       required_tables:
         route.mode === "graph"
-          ? ["CriminalNetworkEdge"]
+          ? ["Accused"]
+          : route.templateId === "case_timeline"
+            ? ["CaseMaster", "ArrestSurrender", "ChargesheetDetails"]
+            : route.templateId === "similar_cases"
+              ? ["CaseMaster"]
           : route.templateId === "cases_by_district"
             ? ["CaseMaster", "Unit", "District"]
             : route.templateId === "case_status_breakdown"
@@ -258,6 +341,15 @@ function buildSetupHint(message, route) {
               : ["CaseMaster"],
       next_step:
         "Create the required Data Store tables from schema.sql and import the matching CSV files before rerunning this query.",
+    };
+  }
+
+  if (route.templateId === "fir_case_lookup" || route.templateId === "geospatial_hotspot_analysis") {
+    return {
+      problem: "The current CaseMaster import is the minimal demonstration schema and does not include the requested FIR-detail or location fields.",
+      required_tables: ["CaseMaster", "Unit", "District"],
+      next_step:
+        "Create or update CaseMaster using the complete schema.sql definition, then bulk-import synthetic_data/CaseMaster.csv through Catalyst Data Store before rerunning this query.",
     };
   }
 
@@ -351,6 +443,133 @@ async function executeCaseStatusBreakdown(zcql, parameters) {
     .sort((left, right) => right.CaseCount - left.CaseCount);
 }
 
+async function executeFirCaseLookup(zcql, parameters) {
+  const caseNumber = String(parameters.caseNumber || "");
+  const caseRows = await zcql.executeZCQLQuery(
+    buildSingleTableQuery(
+      "CaseMaster",
+      ["CaseMasterID", "CrimeNo", "CaseNo", "CrimeRegisteredDate", "PoliceStationID", "CaseStatusID", "BriefFacts"],
+      [`(CrimeNo = '${escapeZcqlLiteral(caseNumber)}' OR CaseNo = '${escapeZcqlLiteral(caseNumber)}')`]
+    )
+  );
+  const unitRows = await zcql.executeZCQLQuery(buildSingleTableQuery("Unit", ["UnitID", "UnitName", "DistrictID"]));
+  const districtRows = await zcql.executeZCQLQuery(buildSingleTableQuery("District", ["DistrictID", "DistrictName"]));
+  const units = new Map(extractTableRows(unitRows, "Unit").map((row) => [String(row.UnitID), row]));
+  const districts = new Map(extractTableRows(districtRows, "District").map((row) => [String(row.DistrictID), row.DistrictName]));
+
+  return extractTableRows(caseRows, "CaseMaster").map((row) => {
+    const unit = units.get(String(row.PoliceStationID)) || {};
+    return {
+      CrimeNo: row.CrimeNo,
+      CaseNo: row.CaseNo,
+      RegisteredDate: row.CrimeRegisteredDate,
+      PoliceStation: unit.UnitName || "Unknown",
+      District: districts.get(String(unit.DistrictID)) || "Unknown",
+      CaseStatusID: row.CaseStatusID,
+      BriefFacts: row.BriefFacts || "Not available",
+    };
+  });
+}
+
+async function executeGeospatialHotspots(zcql, parameters) {
+  const dateRange = parameters.dateRange || {};
+  const rows = await zcql.executeZCQLQuery(
+    buildSingleTableQuery("CaseMaster", ["CrimeRegisteredDate", "latitude", "longitude"], [
+      dateRange.from ? `CrimeRegisteredDate >= '${dateRange.from}'` : null,
+      dateRange.to ? `CrimeRegisteredDate <= '${dateRange.to}'` : null,
+    ])
+  );
+  const cells = new Map();
+  for (const row of extractTableRows(rows, "CaseMaster")) {
+    const latitude = Number(row.latitude);
+    const longitude = Number(row.longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) continue;
+    const latCell = (Math.floor(latitude * 50) / 50).toFixed(2);
+    const longCell = (Math.floor(longitude * 50) / 50).toFixed(2);
+    const key = `${latCell}, ${longCell}`;
+    const current = cells.get(key) || { ApproximateLatitude: latCell, ApproximateLongitude: longCell, CaseCount: 0 };
+    current.CaseCount += 1;
+    cells.set(key, current);
+  }
+  return Array.from(cells.values()).sort((left, right) => right.CaseCount - left.CaseCount);
+}
+
+async function executeCaseTimeline(zcql) {
+  const [caseRows, arrestRows, chargeSheetRows] = await Promise.all([
+    zcql.executeZCQLQuery(
+      buildSingleTableQuery("CaseMaster", ["CaseMasterID", "CrimeNo", "CaseNo", "CrimeRegisteredDate", "IncidentFromDate", "IncidentToDate"])
+    ),
+    zcql.executeZCQLQuery(
+      buildSingleTableQuery("ArrestSurrender", ["CaseMasterID", "ArrestSurrenderID", "ArrestSurrenderTypeID", "ArrestSurrenderDate", "AccusedMasterID"])
+    ),
+    zcql.executeZCQLQuery(
+      buildSingleTableQuery("ChargesheetDetails", ["CaseMasterID", "CSID", "csdate", "cstype"])
+    ),
+  ]);
+  const caseMap = new Map(extractTableRows(caseRows, "CaseMaster").map((row) => [String(row.CaseMasterID), row]));
+  const events = [];
+
+  for (const row of caseMap.values()) {
+    const caseLabel = row.CrimeNo || row.CaseNo || `Case ${row.CaseMasterID}`;
+    if (row.IncidentFromDate) events.push({ Case: caseLabel, Date: row.IncidentFromDate, Event: "Incident window opened", Evidence: "CaseMaster.IncidentFromDate" });
+    if (row.IncidentToDate) events.push({ Case: caseLabel, Date: row.IncidentToDate, Event: "Incident window closed", Evidence: "CaseMaster.IncidentToDate" });
+    if (row.CrimeRegisteredDate) events.push({ Case: caseLabel, Date: row.CrimeRegisteredDate, Event: "FIR/case registered", Evidence: "CaseMaster.CrimeRegisteredDate" });
+  }
+  for (const row of extractTableRows(arrestRows, "ArrestSurrender")) {
+    const caseRecord = caseMap.get(String(row.CaseMasterID)) || {};
+    events.push({
+      Case: caseRecord.CrimeNo || caseRecord.CaseNo || `Case ${row.CaseMasterID}`,
+      Date: row.ArrestSurrenderDate,
+      Event: String(row.ArrestSurrenderTypeID) === "2" ? "Surrender recorded" : "Arrest recorded",
+      Evidence: `ArrestSurrender.${row.ArrestSurrenderID || "record"}; accused ${row.AccusedMasterID || "not recorded"}`,
+    });
+  }
+  for (const row of extractTableRows(chargeSheetRows, "ChargesheetDetails")) {
+    const caseRecord = caseMap.get(String(row.CaseMasterID)) || {};
+    events.push({
+      Case: caseRecord.CrimeNo || caseRecord.CaseNo || `Case ${row.CaseMasterID}`,
+      Date: row.csdate,
+      Event: chargeSheetTypeLabel(row.cstype),
+      Evidence: `ChargesheetDetails.${row.CSID || "record"}`,
+    });
+  }
+  return events.filter((row) => row.Date).sort((left, right) => String(right.Date).localeCompare(String(left.Date)));
+}
+
+async function executeSimilarCases(zcql) {
+  const caseRows = await zcql.executeZCQLQuery(
+    buildSingleTableQuery("CaseMaster", ["CaseMasterID", "CrimeNo", "CaseNo", "CrimeRegisteredDate", "PoliceStationID", "CrimeMajorHeadID", "CrimeMinorHeadID", "CaseStatusID"])
+  );
+  const groups = new Map();
+  for (const row of extractTableRows(caseRows, "CaseMaster")) {
+    const key = [row.CrimeMajorHeadID || "unknown", row.CrimeMinorHeadID || "unknown", row.PoliceStationID || "unknown"].join("|");
+    const current = groups.get(key) || [];
+    current.push(row);
+    groups.set(key, current);
+  }
+  return Array.from(groups.entries())
+    .filter(([, rows]) => rows.length > 1)
+    .flatMap(([key, rows]) => rows.map((row) => ({
+      Case: row.CrimeNo || row.CaseNo || `Case ${row.CaseMasterID}`,
+      RegisteredDate: row.CrimeRegisteredDate,
+      SimilarCasesInGroup: rows.length - 1,
+      SimilarityBasis: `Major head, minor head, and police-station match (${key})`,
+      CaseStatusID: row.CaseStatusID,
+    })))
+    .sort((left, right) => right.SimilarCasesInGroup - left.SimilarCasesInGroup);
+}
+
+function chargeSheetTypeLabel(value) {
+  if (value === "A") return "Charge sheet filed";
+  if (value === "B") return "False-case outcome recorded";
+  if (value === "C") return "Undetected-case outcome recorded";
+  return "Charge-sheet event recorded";
+}
+
+function escapeZcqlLiteral(value) {
+  return String(value).replace(/'/g, "''");
+}
+
 function buildSingleTableQuery(tableName, columns, conditions = []) {
   const where = conditions.filter(Boolean);
   return [
@@ -437,6 +656,50 @@ function inferNarrativeCategory(briefFacts) {
   return match ? match[1] : "other";
 }
 
+async function executeCriminalNetwork(zcql) {
+  try {
+    const accusedRows = await zcql.executeZCQLQuery(
+      buildSingleTableQuery("Accused", ["AccusedMasterID", "CaseMasterID"])
+    );
+    const byCase = new Map();
+    for (const row of extractTableRows(accusedRows, "Accused")) {
+      const caseId = String(row.CaseMasterID || "");
+      const accusedId = String(row.AccusedMasterID || "");
+      if (!caseId || !accusedId) continue;
+      const people = byCase.get(caseId) || [];
+      people.push(accusedId);
+      byCase.set(caseId, people);
+    }
+
+    const edges = [];
+    for (const [caseId, people] of byCase.entries()) {
+      const distinctPeople = [...new Set(people)].sort((left, right) => Number(left) - Number(right));
+      for (let leftIndex = 0; leftIndex < distinctPeople.length; leftIndex += 1) {
+        for (let rightIndex = leftIndex + 1; rightIndex < distinctPeople.length; rightIndex += 1) {
+          edges.push({
+            Source: `A${distinctPeople[leftIndex]}`,
+            Target: `A${distinctPeople[rightIndex]}`,
+            SharedCase: caseId,
+            RelationType: "co-accused",
+            Weight: 1,
+            Cluster: `case-${caseId}`,
+          });
+        }
+      }
+    }
+
+    return {
+      rows: edges.sort((left, right) => Number(right.SharedCase) - Number(left.SharedCase)),
+      summary: "Relationships are calculated from accused co-occurrence in FIR cases. They are investigative leads, not proof of association or guilt.",
+    };
+  } catch (_error) {
+    return {
+      rows: executeGraphPreview(),
+      summary: "Showing the packaged demonstration network because the Accused table is not yet available in Catalyst Data Store.",
+    };
+  }
+}
+
 function executeGraphPreview() {
   return graphSeed.map((edge) => ({
     Source: edge.AccusedMasterID_A,
@@ -446,6 +709,51 @@ function executeGraphPreview() {
     Weight: edge.Weight,
     Cluster: edge.ClusterLabel,
   }));
+}
+
+function contextualizeQuery(queryText, history) {
+  const compactHistory = history
+    .filter((item) => item && typeof item.query === "string")
+    .slice(-3);
+  const isFollowUp = /^(what about|and for|same for|how about|ಅದೇ|ಮತ್ತೆ)/i.test(queryText);
+
+  if (!isFollowUp || !compactHistory.length) {
+    return normalizeKannadaQuery(queryText);
+  }
+
+  return normalizeKannadaQuery(`${compactHistory[compactHistory.length - 1].query} ${queryText}`);
+}
+
+function normalizeKannadaQuery(queryText) {
+  const replacements = [
+    [/ಅಪರಾಧಗಳ ಸಂಖ್ಯೆ|ಪ್ರಕರಣಗಳ ಸಂಖ್ಯೆ/g, "cases"],
+    [/ಜಿಲ್ಲೆ/g, "district"],
+    [/ಸ್ಥಿತಿ|ತನಿಖಾ ಸ್ಥಿತಿ/g, "status"],
+    [/ಜಾಲ|ಸಂಪರ್ಕಗಳು|ಗ್ಯಾಂಗ್/g, "network connections"],
+    [/ಪುನರಾವರ್ತಿತ ಅಪರಾಧಿಗಳು/g, "repeat offenders"],
+    [/ಸಾರಾಂಶ|ಸಂಕ್ಷಿಪ್ತ ಸಂಗತಿಗಳು/g, "summarize brief facts"],
+    [/ಬೆಂಗಳೂರು ನಗರ/g, "Bengaluru Urban"],
+    [/ಮೈಸೂರು/g, "Mysuru"],
+  ];
+
+  return replacements.reduce(
+    (normalized, [pattern, replacement]) => normalized.replace(pattern, replacement),
+    queryText
+  );
+}
+
+function buildConversationReportHtml(body) {
+  const history = Array.isArray(body.history) ? body.history.slice(0, 20) : [];
+  const latest = body.result || {};
+  const rows = history
+    .map((item) => `<tr><td>${escapeHtml(item.query)}</td><td>${escapeHtml(item.mode)}</td><td>${item.executed ? "Executed" : "Planned"}</td></tr>`)
+    .join("");
+  const summary = latest.summary || latest.route?.explanation || "No response summary was supplied.";
+  return `<!doctype html><html><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#16233a;font-size:11px}h1{font-size:24px;color:#123c68;margin:0 0 6px}h2{font-size:15px;color:#123c68;margin:24px 0 8px}.tag{color:#62728a}table{width:100%;border-collapse:collapse;margin-top:8px}th{background:#123c68;color:#fff;text-align:left}th,td{padding:9px;border:1px solid #d9e1ec;vertical-align:top}p{line-height:1.5}</style></head><body><h1>KSP Crime Intelligence Conversation</h1><p class="tag">Evidence-led investigation report | Generated ${escapeHtml(new Date().toISOString())}</p><h2>Latest response</h2><p>${escapeHtml(summary)}</p><h2>Conversation history</h2><table><thead><tr><th>Question</th><th>Mode</th><th>Status</th></tr></thead><tbody>${rows || '<tr><td colspan="3">No conversation history supplied.</td></tr>'}</tbody></table><p class="tag">Synthetic-data prototype. Associations are investigative leads, not proof of wrongdoing.</p></body></html>`;
+}
+
+function escapeHtml(value) {
+  return String(value || "").replace(/[&<>"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[character]));
 }
 
 async function parseBody(req) {
